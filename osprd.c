@@ -71,8 +71,8 @@ typedef struct osprd_info {
 	unsigned num_readers;//number of read locks
 	unsigned write_lock;//true if there is a write lock (there can only be one)
 	pid_t writer;
-	struct node * read_list;//
 	struct node * invalid_list;
+	struct node * read_list;//
 	// The following elements are used internally; you don't need
 	// to understand them.
 	struct request_queue *queue;    // The device request queue.
@@ -115,19 +115,13 @@ static void increment_tail_ticket(osprd_info_t * d) {
 	struct node * cur;
 	int change;
 	d->ticket_tail++;
-	// eprintk("head: %d, tail: %d\n", (*d)->ticket_head, (*d)->ticket_tail);
 	change = 1;
 	while (change) {
 		change = 0;
 		cur = d->invalid_list;
-		if (cur == NULL) {
-			// eprintk("invalid list is empty\n");
-		}
 		while (cur !=NULL) {
-			// eprintk("invalid: %d, current tail %d\n", cur->ticket, (*d)->ticket_tail);
 			if (cur->ticket == d->ticket_tail) {
 				d->ticket_tail++;
-				// eprintk("inalid, increment again, head: %d, tail: %d\n", (*d)->ticket_head, (*d)->ticket_tail);
 				change = 1;
 				break;
 			}
@@ -222,6 +216,7 @@ static int osprd_close_last(struct inode *inode, struct file *filp)
 		int filp_writable = filp->f_mode & FMODE_WRITE;
 		struct node * tmp;
 		struct node * cur;
+		struct node * prev;
 		// EXERCISE: If the user closes a ramdisk file that holds
 		// a lock, release the lock.  Also wake up blocked processes
 		// as appropriate.
@@ -234,22 +229,48 @@ static int osprd_close_last(struct inode *inode, struct file *filp)
 				d->writer = -1;
 			}
 			else {
-				d->num_readers = 0;
-				cur = d->read_list;
-				while (cur !=NULL) {//NOT SURE WHAT TO DO
-					//--------------------------
-					// tmp = cur->next;
-					// kfree(cur);
-					// cur = tmp;
-					//--------------------------------
-					if (cur->next->pid == current->pid){
-						tmp = cur->next->next;
-						kfree(cur->next);
-						cur->next = tmp;
-					}
-					cur = cur->next;
-					//------------------------------
+				// d->num_readers = 0;
+				d->num_readers--;
+				eprintk("num readers: %d\n", d->num_readers);
+				// d->read_list = NULL;
+	
+				if (d->read_list->pid == current-> pid) {
+					eprintk("did something\n");
+					tmp = d->read_list->next;
+					kfree(d->read_list);
+					d->read_list = tmp;
 				}
+				// else{//never goes in here on test cases
+				// 	eprintk("WEFAJFSDJFPSDJFIOPAJIFP\n");
+				// 	cur = d->read_list;
+				// 	while (cur != NULL) {
+				// 		eprintk("doing something else\n");
+				// 		if (cur->next->pid == current->pid){
+				// 		tmp = cur->next->next;
+				// 		kfree(cur->next);
+				// 		cur->next = tmp;
+				// 		}
+				// 		cur = cur->next;
+				// 	}
+				// }
+				// cur = d->read_list;
+				// while (cur !=NULL) {//NOT SURE WHAT TO DO
+				// 	// //--------------------------
+				// 	// tmp = cur->next;
+				// 	// kfree(cur);
+				// 	// cur = tmp;
+				// 	//--------------------------------
+				// 	//doesnt work when we make the add list
+				// 	// if (cur->next->pid == current->pid){
+				// 	// 	tmp = cur->next->next;
+				// 	// 	kfree(cur->next);
+				// 	// 	cur->next = tmp;
+				// 	// }
+				// 	// cur = cur->next;
+				// 	//------------------------------
+				// 	//just d ong this seems to work best
+				// 	cur = cur->next;
+				// }
 			}
 		}
 		filp->f_flags ^= F_OSPRD_LOCKED;
@@ -361,11 +382,9 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 				//add my_ticket to list of invalids tickets
 				osp_spin_lock(&d->mutex);
 				invalid_head = d->invalid_list;
-				// eprintk("received signal\n");
 				if (invalid_head == NULL) {
 					invalid_head = kmalloc(sizeof(struct node), GFP_ATOMIC);
 					d->invalid_list = invalid_head;
-					// eprintk("w: invalid list head init\n");
 					invalid_head->ticket = my_ticket;
 					invalid_head->next = NULL;
 				}
@@ -399,10 +418,7 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 				invalid_head = d->invalid_list;
 				if (invalid_head == NULL) {
 					invalid_head = kmalloc(sizeof(struct node), GFP_ATOMIC);
-					// eprintk("r: invalid list head init\n");
 					d->invalid_list = invalid_head;
-					// if (d->invalid_list ==NULL)
-					// 	eprintk("okay i see\n");
 					invalid_head->ticket = my_ticket;
 					invalid_head->next = NULL;
 				}
@@ -426,14 +442,10 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 			d->num_readers++;
 			head = d->read_list;	
 			if (head == NULL) {//if list is empty
-				eprintk("wow still null\n");
 				head = kmalloc(sizeof(struct node), GFP_ATOMIC);
-				d->read_list = head;
-				if (d->read_list ==NULL)
-					eprintk("of course still null\n");
-				// d->read_list = head;
 				head->pid = current->pid;
 				head->next = NULL;
+				d->read_list = head;
 			}	
 			else {	
 				while (head->next !=NULL) {
@@ -485,6 +497,7 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 				head = kmalloc(sizeof(struct node), GFP_ATOMIC);
 				head->pid = current->pid;
 				head->next = NULL;
+				d->read_list = head;
 			}	
 			else {	
 				while (head->next !=NULL) {
