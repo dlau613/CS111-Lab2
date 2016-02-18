@@ -231,11 +231,11 @@ static int osprd_close_last(struct inode *inode, struct file *filp)
 			else {
 				// d->num_readers = 0;
 				d->num_readers--;
-				eprintk("num readers: %d\n", d->num_readers);
+				// eprintk("num readers: %d\n", d->num_readers);
 				// d->read_list = NULL;
 	
 				if (d->read_list->pid == current-> pid) {
-					eprintk("did something\n");
+					// eprintk("did something\n");
 					tmp = d->read_list->next;
 					kfree(d->read_list);
 					d->read_list = tmp;
